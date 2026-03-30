@@ -78,3 +78,10 @@ Each step blends points:
 ```js
 x = p0.x + (p1.x - p0.x) * t
 y = p0.y + (p1.y - p0.y) * t
+```
+
+<div align="center">
+
+**👤 Author:** Nikola Topalov  
+
+</div>
