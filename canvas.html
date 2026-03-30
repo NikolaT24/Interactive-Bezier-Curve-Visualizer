@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nikola's project</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Arial', sans-serif;
+    }
+
+    body {
+      background-color: #1e1e2e;
+      color: #e0e0e0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      background: #282a36;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0px 5px 15px rgba(0, 0, 0, 0.3);
+    }
+
+    canvas {
+      border: 3px solid #50fa7b;
+      background-color: #44475a;
+      cursor: crosshair;
+      margin-bottom: 15px;
+      border-radius: 5px;
+    }
+
+    button {
+      background: linear-gradient(45deg, #ff79c6, #bd93f9);
+      color: white;
+      border: none;
+      padding: 12px 20px;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 6px;
+      margin-top: 10px;
+      transition: all 0.3s ease;
+    }
+
+    button:hover {
+      opacity: 0.8;
+      transform: scale(1.05);
+    }
+
+    #slider-container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 300px;
+      margin-top: 10px;
+    }
+
+    #slider {
+      flex-grow: 1;
+      margin: 0 10px;
+      -webkit-appearance: none;
+      height: 6px;
+      background: #ffb86c;
+      border-radius: 5px;
+      outline: none;
+      transition: 0.2s;
+    }
+
+    #slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 18px;
+      height: 18px;
+      background: #ff5555;
+      border-radius: 50%;
+      cursor: pointer;
+    }
+
+    #toggle-container {
+      display: flex;
+      align-items: center;
+      margin-top: 15px;
+    }
+
+    #showBezier {
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+      margin-left: 8px;
+    }
+
+    #instructions {
+      text-align: left;
+      margin-top: 15px;
+      background: rgba(0, 0, 0, 0.2);
+      padding: 10px;
+      border-radius: 5px;
+      max-width: 600px;
+    }
+
+    #instructions ul {
+      list-style: none;
+      padding-left: 10px;
+    }
+
+    #instructions li {
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    #instructions li::before {
+      content: "➤";
+      color: #50fa7b;
+      margin-right: 5px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="container">
+    <canvas id="bezierCanvas" width="800" height="500"></canvas>
+
+    <div id="slider-container">
+      <span>0</span>
+      <input type="range" id="slider" min="0" max="1" step="0.01" value="0.5" oninput="updateSlider()">
+      <span>1</span>
+    </div>
+
+    <button onclick="clearAll()">Изчисти всички точки</button>
+
+    <div id="toggle-container">
+      <label for="showBezier">Покажи кривата</label>
+      <input type="checkbox" id="showBezier" onchange="toggleBezierVisibility()">
+    </div>
+
+    <div id="instructions">
+      <p><b>Как работи:</b></p>
+      <ul>
+        <li>Кликнете върху платното, за да добавите контролна точка.</li>
+        <li>Кликнете с ляв бутон върху добавена точка и плъзнете, за да я преместите.</li>
+        <li>Кликнете с десен бутон върху платното, за да премахнете последната точка.</li>
+		<li>Отбележете квадратчето, което е вдясно на "Покажи кривата", за да излезе кривата на Безие на платното.</li>
+        <li>Настройте плъзгача, за да видите промените в реално време.</li>
+        <li>Натиснете "Изчисти всички точки", за да изчистите платното.</li>
+      </ul>
+    </div>
+  </div>
+  
+<script>
+    let controlPoints = [];
+    let sliderValue = 0.5;
+    let animationFrameID;
+    let isDraggingAllowed = false;
+    let draggedPoint = null;
+
+    let isBezierVisible = false;
+
+    const canvas = document.getElementById('bezierCanvas');
+    const context = canvas.getContext('2d');
+
+    function updateSlider() {
+      sliderValue = parseFloat(document.getElementById('slider').value);
+      cancelAnimationFrame(animationFrameID);
+      applyChanges();
+    }
+
+    function initializeControlPoints() {
+      controlPoints = [];
+    }
+
+    function calculateSubdivision(points, t) {
+      const subdividedPoints = [];
+
+      for (let i = 1; i < points.length; i++) {
+        const prevPoint = points[i - 1];
+        const currentPoint = points[i];
+
+        const interpolatedPoint = linearInterpolation(prevPoint, currentPoint, t);
+        subdividedPoints.push(interpolatedPoint);
+      }
+
+      return subdividedPoints;
+    }
+
+    function linearInterpolation(p0, p1, t) {
+      return {
+        x: p0.x + (p1.x - p0.x) * t,
+        y: p0.y + (p1.y - p0.y) * t,
+      };
+    }
+
+	function renderBezierCurve(context, controlPoints) {
+	  if (isBezierVisible) {
+		const n = controlPoints.length - 1;
+
+		function deCasteljauAlgorithm(t, points) {
+		  const tempPoints = [...points];
+		  for (let r = 1; r <= n; r++) {
+			for (let i = 0; i <= n - r; i++) {
+			  tempPoints[i] = {
+				x: (1 - t) * tempPoints[i].x + t * tempPoints[i + 1].x,
+				y: (1 - t) * tempPoints[i].y + t * tempPoints[i + 1].y
+			  };
+			}
+		  }
+		  return tempPoints[0];
+		}
+
+		context.fillStyle = "#8be9fd";
+		for (const point of controlPoints) {
+		  context.beginPath();
+		  context.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+		  context.fill();
+		}
+
+		context.beginPath();
+		context.strokeStyle = "#50fa7b";
+		context.moveTo(controlPoints[0].x, controlPoints[0].y);
+
+		const step = 0.01;
+		for (let t = step; t <= 1; t += step) {
+		  const curvePoint = deCasteljauAlgorithm(t, controlPoints);
+		  context.lineTo(curvePoint.x, curvePoint.y);
+		}
+		context.lineWidth = 1;
+		context.strokeStyle = "#2d8d46";
+		context.stroke();
+	  }
+	}
+
+    function drawControlPoints(context, points, color) {
+      context.fillStyle = color;
+      points.forEach(point => {
+        context.beginPath();
+        context.arc(point.x, point.y, 5, 0, 2 * Math.PI);
+        context.fill();
+      });
+    }
+	
+	function applyChanges() {
+	  context.clearRect(0, 0, canvas.width, canvas.height);
+	  drawControlPoints(context, controlPoints, 'cyan');
+	  drawLines(context, controlPoints, 'magenta');
+
+	  if (controlPoints.length > 1) {
+		const t = sliderValue;
+		let currentPoints = [...controlPoints];
+
+		while (currentPoints.length > 1) {
+		  currentPoints = calculateSubdivision(currentPoints, t);
+		  renderBezierCurve(context, controlPoints, 'green');
+		  drawControlPoints(context, currentPoints, 'orange');
+		  drawLines(context, currentPoints, 'yellow');
+		}
+		drawControlPoints(context, currentPoints, 'yellow');
+	  }
+
+	  animationFrameID = requestAnimationFrame(applyChanges);
+	}
+	
+    function toggleBezierVisibility() {
+      isBezierVisible = !isBezierVisible;
+      applyChanges();
+    }
+
+	function drawLines(context, points, color) {
+	  context.strokeStyle = color;
+	  context.beginPath();
+	  context.moveTo(points[0].x, points[0].y);
+
+	  for (let i = 1; i < points.length; i++) {
+		context.lineTo(points[i].x, points[i].y);
+	  }
+
+	  context.stroke();
+	}
+
+
+    function handleMouseDown(event) {
+      const mouseX = event.clientX - canvas.getBoundingClientRect().left;
+      const mouseY = event.clientY - canvas.getBoundingClientRect().top;
+
+      for (const point of controlPoints) {
+        const distance = Math.sqrt((mouseX - point.x) ** 2 + (mouseY - point.y) ** 2);
+        if (distance <= 5) {
+          isDraggingAllowed = true;
+          draggedPoint = point;
+          break;
+        }
+      }
+    }
+
+    function handleMouseMove(event) {
+      if (isDraggingAllowed && draggedPoint) {
+        draggedPoint.x = event.clientX - canvas.getBoundingClientRect().left;
+        draggedPoint.y = event.clientY - canvas.getBoundingClientRect().top;
+        cancelAnimationFrame(animationFrameID);
+        applyChanges();
+      }
+    }
+
+    function handleMouseUp() {
+      if (isDraggingAllowed) {
+        isDraggingAllowed = false;
+        draggedPoint = null;
+        cancelAnimationFrame(animationFrameID);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        renderBezierCurve(context, controlPoints);
+        removeLastControlPoint();
+        applyChanges();
+      }
+    }
+
+    function handleCanvasClick(event) {
+      const mouseX = event.clientX - canvas.getBoundingClientRect().left;
+      const mouseY = event.clientY - canvas.getBoundingClientRect().top;
+
+      controlPoints.push({ x: mouseX, y: mouseY });
+
+      renderBezierCurve(context, controlPoints);
+
+      cancelAnimationFrame(animationFrameID);
+      applyChanges();
+    }
+
+    function removeLastControlPoint() {
+      if (controlPoints.length > 0) {
+        controlPoints.pop();
+        cancelAnimationFrame(animationFrameID);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        renderBezierCurve(context, controlPoints);
+        applyChanges();
+      }
+    }
+
+    function handleCanvasRightClick(event) {
+      event.preventDefault();
+
+      if (controlPoints.length > 0) {
+        controlPoints.pop();
+        cancelAnimationFrame(animationFrameID);
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        renderBezierCurve(context, controlPoints);
+        applyChanges();
+      }
+    }
+
+    canvas.addEventListener('contextmenu', handleCanvasRightClick);
+
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    canvas.addEventListener('click', handleCanvasClick);
+
+    initializeControlPoints();
+    renderBezierCurve(context, controlPoints);
+    applyChanges();
+
+    function clearAll() {
+      controlPoints = [];
+      cancelAnimationFrame(animationFrameID);
+      context.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+</script>
+
+</body>
+
+</html>
